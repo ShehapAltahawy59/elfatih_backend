@@ -5,7 +5,8 @@ from typing import List, Optional
 
 from db.database import get_db
 from crud.post import PostCRUD
-from schemas.post import PostCreate, PostUpdate, PostResponse, FeedbackCreate, PostWithUserFeedback, FeedbackTypeEnum
+from models.post import Post
+from schemas.post import PostCreate, PostUpdate, PostResponse, FeedbackCreate, PostWithUserFeedback, FeedbackTypeEnum, TextSectionCreate, VideoSectionCreate, SectionTypeEnum
 from api.auth import get_current_active_user, get_current_admin_user
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -111,7 +112,7 @@ def get_post_image(
     post_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get post image as binary response"""
+    """Get main post image as binary response"""
     try:
         post_crud = PostCRUD(db)
         image_data = post_crud.get_post_image(post_id)
@@ -119,7 +120,7 @@ def get_post_image(
         if not image_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Image not found"
+                detail="Post image not found"
             )
         
         image_bytes, content_type, filename = image_data
@@ -138,7 +139,7 @@ def get_post_image(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get image: {str(e)}"
+            detail=f"Failed to get post image: {str(e)}"
         )
 
 # User feedback endpoints
@@ -272,26 +273,390 @@ def remove_feedback(
             "post_id": post_id
         }
 
-# Admin endpoints
-@router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_post(
-    header: str = Form(...),
-    description: str = Form(...),
-    image: Optional[UploadFile] = File(None),
+# Section endpoints
+@router.get("/sections/{section_id}/image")
+def get_section_image(
+    section_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get section image as binary response"""
+    try:
+        post_crud = PostCRUD(db)
+        image_data = post_crud.get_section_image(section_id)
+        
+        if not image_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Image not found"
+            )
+        
+        image_bytes, content_type, filename = image_data
+        
+        return Response(
+            content=image_bytes,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"inline; filename={filename}",
+                "Cache-Control": "public, max-age=3600"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get section image: {str(e)}"
+        )
+
+@router.post("/{post_id}/sections/text")
+def add_text_section(
+    post_id: int,
+    section_data: TextSectionCreate,
     db: Session = Depends(get_db),
     current_admin: dict = Depends(get_current_admin_user)
 ):
-    """Admin only: Create a new post with optional image"""
+    """Admin only: Add a text section to a post"""
     try:
-        # Create PostCreate object from form data
-        post_data = PostCreate(header=header, description=description)
-        
         post_crud = PostCRUD(db)
-        post = await post_crud.create_with_image(post_data, image)
+        
+        # Check if post exists
+        post = post_crud.get_by_id(post_id)
+        if not post:
+            return {
+                "error": "Post not found",
+                "post_id": post_id
+            }
+        
+        section = post_crud.create_text_section(post_id, section_data)
+        if not section:
+            return {
+                "error": "Failed to create text section",
+                "post_id": post_id
+            }
+        
+        return {
+            "message": "Text section added successfully",
+            "section": {
+                "id": section.id,
+                "section_type": section.section_type.value,
+                "order_index": section.order_index,
+                "text_content": section.text_content,
+                "created_at": section.created_at.isoformat() if section.created_at else None
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "error": "Failed to add text section",
+            "details": str(e),
+            "post_id": post_id
+        }
+
+@router.post("/{post_id}/sections/image")
+async def add_image_section(
+    post_id: int,
+    order_index: int = Form(0),
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Admin only: Add an image section to a post"""
+    try:
+        post_crud = PostCRUD(db)
+        
+        # Check if post exists
+        post = post_crud.get_by_id(post_id)
+        if not post:
+            return {
+                "error": "Post not found",
+                "post_id": post_id
+            }
+        
+        section = await post_crud.create_image_section(post_id, order_index, image)
+        if not section:
+            return {
+                "error": "Failed to create image section",
+                "post_id": post_id
+            }
+        
+        return {
+            "message": "Image section added successfully",
+            "section": {
+                "id": section.id,
+                "section_type": section.section_type.value,
+                "order_index": section.order_index,
+                "image_url": f"/api/v1/posts/sections/{section.id}/image",
+                "image_filename": section.image_filename,
+                "created_at": section.created_at.isoformat() if section.created_at else None
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "error": "Failed to add image section",
+            "details": str(e),
+            "post_id": post_id
+        }
+
+@router.post("/{post_id}/sections/video")
+def add_video_section(
+    post_id: int,
+    section_data: VideoSectionCreate,
+    db: Session = Depends(get_db),
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Admin only: Add a video section to a post"""
+    try:
+        post_crud = PostCRUD(db)
+        
+        # Check if post exists
+        post = post_crud.get_by_id(post_id)
+        if not post:
+            return {
+                "error": "Post not found",
+                "post_id": post_id
+            }
+        
+        section = post_crud.create_video_section(post_id, section_data)
+        if not section:
+            return {
+                "error": "Failed to create video section",
+                "post_id": post_id
+            }
+        
+        return {
+            "message": "Video section added successfully",
+            "section": {
+                "id": section.id,
+                "section_type": section.section_type.value,
+                "order_index": section.order_index,
+                "video_url": section.video_url,
+                "created_at": section.created_at.isoformat() if section.created_at else None
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "error": "Failed to add video section",
+            "details": str(e),
+            "post_id": post_id
+        }
+
+@router.put("/sections/{section_id}/order")
+def update_section_order(
+    section_id: int,
+    new_order: int,
+    db: Session = Depends(get_db),
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Admin only: Update the order of a section"""
+    try:
+        post_crud = PostCRUD(db)
+        section = post_crud.update_section_order(section_id, new_order)
+        
+        if not section:
+            return {
+                "error": "Section not found",
+                "section_id": section_id
+            }
+        
+        return {
+            "message": "Section order updated successfully",
+            "section": {
+                "id": section.id,
+                "order_index": section.order_index
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "error": "Failed to update section order",
+            "details": str(e),
+            "section_id": section_id
+        }
+
+@router.delete("/sections/{section_id}")
+def delete_section(
+    section_id: int,
+    db: Session = Depends(get_db),
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Admin only: Delete a section"""
+    try:
+        post_crud = PostCRUD(db)
+        success = post_crud.delete_section(section_id)
+        
+        if success:
+            return {
+                "message": "Section deleted successfully",
+                "section_id": section_id
+            }
+        else:
+            return {
+                "error": "Section not found",
+                "section_id": section_id
+            }
+        
+    except Exception as e:
+        return {
+            "error": "Failed to delete section",
+            "details": str(e),
+            "section_id": section_id
+        }
+
+# Admin endpoints
+@router.post("/complete", status_code=status.HTTP_201_CREATED)
+async def create_complete_post(
+    header: str = Form(...),
+    description: Optional[str] = Form(None),
+    sections: str = Form(...),  # JSON string describing all sections with their types and order
+    # Main post image (featured/cover image)
+    main_image: Optional[UploadFile] = File(None),
+    # For image sections - multiple files can be uploaded
+    images: Optional[List[UploadFile]] = File(None),
+    db: Session = Depends(get_db),
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """
+    Admin only: Create a complete post with flexible sections
+    
+    sections format:
+    [
+        {"type": "text", "order_index": 0, "content": "Introduction text..."},
+        {"type": "image", "order_index": 1, "content": "image_file_1"},
+        {"type": "text", "order_index": 2, "content": "More text..."},
+        {"type": "video", "order_index": 3, "content": "https://youtube.com/watch?v=..."},
+        {"type": "image", "order_index": 4, "content": "image_file_2"}
+    ]
+    
+    Note: For image sections, the "content" field should match the filename of uploaded images
+    """
+    try:
+        import json
+        post_crud = PostCRUD(db)
+        
+        # Parse sections data
+        try:
+            sections_data = json.loads(sections)
+        except json.JSONDecodeError as e:
+            return {"error": f"Invalid sections JSON: {str(e)}"}
+        
+        # Create the basic post with main image
+        post_data = PostCreate(header=header, description=description)
+        db_post = await post_crud.create_with_image(post_data, main_image)
+        
+        created_sections = []
+        
+        # Process each section based on its type
+        for section_info in sections_data:
+            section_type = section_info.get("type")
+            order_index = section_info.get("order_index", 0)
+            content = section_info.get("content", "")
+            
+            if section_type == "text":
+                # Create text section
+                section_data = TextSectionCreate(
+                    order_index=order_index,
+                    text_content=content
+                )
+                section = post_crud.create_text_section(db_post.id, section_data)
+                if section:
+                    created_sections.append({
+                        "id": section.id,
+                        "type": "text",
+                        "order_index": section.order_index,
+                        "content": section.text_content[:100] + "..." if len(section.text_content) > 100 else section.text_content
+                    })
+            
+            elif section_type == "image":
+                # Create image section - find image by filename in content
+                image_filename = content
+                if images:
+                    # Find the uploaded image that matches the content filename
+                    matching_image = None
+                    for image_file in images:
+                        if image_file.filename == image_filename:
+                            matching_image = image_file
+                            break
+                    
+                    if matching_image:
+                        section = await post_crud.create_image_section(db_post.id, order_index, matching_image)
+                        if section:
+                            created_sections.append({
+                                "id": section.id,
+                                "type": "image",
+                                "order_index": section.order_index,
+                                "filename": section.image_filename,
+                                "image_url": f"/api/v1/posts/sections/{section.id}/image"
+                            })
+                    else:
+                        return {"error": f"Image file '{image_filename}' not found in uploaded images"}
+                else:
+                    return {"error": f"No images uploaded but image section requires '{image_filename}'"}
+            
+            elif section_type == "video":
+                # Create video section
+                section_data = VideoSectionCreate(
+                    order_index=order_index,
+                    video_url=content
+                )
+                section = post_crud.create_video_section(db_post.id, section_data)
+                if section:
+                    created_sections.append({
+                        "id": section.id,
+                        "type": "video",
+                        "order_index": section.order_index,
+                        "video_url": section.video_url
+                    })
+            
+            else:
+                return {"error": f"Invalid section type: {section_type}. Must be 'text', 'image', or 'video'"}
+        
+        # Get the complete post with all sections
+        complete_post = post_crud.get_by_id(db_post.id)
+        
+        return {
+            "message": "Complete post created successfully",
+            "post": post_crud.convert_post_to_dict(complete_post),
+            "sections_created": len(created_sections),
+            "created_sections": created_sections
+        }
+        
+    except Exception as e:
+        return {
+            "error": "Failed to create complete post",
+            "details": str(e),
+            "debug": "Exception in POST /posts/complete"
+        }
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def create_post(
+    post_data: PostCreate,
+    db: Session = Depends(get_db),
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Admin only: Create a basic post (sections added separately)"""
+    try:
+        post_crud = PostCRUD(db)
+        
+        # Create basic post without sections
+        db_post = Post(
+            header=post_data.header,
+            description=post_data.description,
+            positive_feedbacks=0,
+            negative_feedbacks=0,
+            is_active=True
+        )
+        
+        post_crud.db.add(db_post)
+        post_crud.db.commit()
+        post_crud.db.refresh(db_post)
         
         return {
             "message": "Post created successfully",
-            "post": post_crud.convert_post_to_dict(post)
+            "post": post_crud.convert_post_to_dict(db_post),
+            "instructions": "Use the section endpoints to add content: /posts/{id}/sections/text, /posts/{id}/sections/image, /posts/{id}/sections/video"
         }
         
     except Exception as e:
@@ -338,10 +703,10 @@ async def update_post_image(
     db: Session = Depends(get_db),
     current_admin: dict = Depends(get_current_admin_user)
 ):
-    """Admin only: Update post image"""
+    """Admin only: Update main post image"""
     try:
         post_crud = PostCRUD(db)
-        post = await post_crud.update_image(post_id, image)
+        post = await post_crud.update_post_image(post_id, image)
         
         if not post:
             return {
@@ -350,13 +715,13 @@ async def update_post_image(
             }
         
         return {
-            "message": "Post image updated successfully",
+            "message": "Main post image updated successfully",
             "post": post_crud.convert_post_to_dict(post)
         }
         
     except Exception as e:
         return {
-            "error": "Failed to update post image",
+            "error": "Failed to update main post image",
             "details": str(e),
             "post_id": post_id
         }
@@ -367,10 +732,10 @@ def remove_post_image(
     db: Session = Depends(get_db),
     current_admin: dict = Depends(get_current_admin_user)
 ):
-    """Admin only: Remove post image"""
+    """Admin only: Remove main post image"""
     try:
         post_crud = PostCRUD(db)
-        post = post_crud.remove_image(post_id)
+        post = post_crud.remove_post_image(post_id)
         
         if not post:
             return {
@@ -379,13 +744,13 @@ def remove_post_image(
             }
         
         return {
-            "message": "Post image removed successfully",
+            "message": "Main post image removed successfully",
             "post": post_crud.convert_post_to_dict(post)
         }
         
     except Exception as e:
         return {
-            "error": "Failed to remove post image",
+            "error": "Failed to remove main post image",
             "details": str(e),
             "post_id": post_id
         }

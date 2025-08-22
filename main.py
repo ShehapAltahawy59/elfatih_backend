@@ -6,6 +6,7 @@ from db.database import engine, Base
 from api.users import router as users_router
 from api.auth import router as auth_router
 from api.admin import router as admin_router
+from api.devices import router as devices_router
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -44,6 +45,14 @@ app = FastAPI(
         {
             "name": "admin",
             "description": "Admin panel endpoints - requires admin role"
+        },
+        {
+            "name": "posts",
+            "description": "Posts management endpoints - create, read, update, delete posts with sections"
+        },
+        {
+            "name": "devices",
+            "description": "Device management endpoints - CRUD operations with QR code generation"
         }
     ]
 )
@@ -60,10 +69,11 @@ app.add_middleware(
 # Include routers
 from api.posts import router as posts_router
 
-app.include_router(auth_router, prefix="/api/v1")
-app.include_router(users_router, prefix="/api/v1")
-app.include_router(admin_router, prefix="/api/v1")
-app.include_router(posts_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1", tags=["authentication"])
+app.include_router(users_router, prefix="/api/v1", tags=["users"])
+app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
+app.include_router(posts_router, prefix="/api/v1", tags=["posts"])
+app.include_router(devices_router, prefix="/api/v1/devices", tags=["devices"])
 
 @app.get("/", tags=["root"])
 def read_root():

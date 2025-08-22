@@ -2,16 +2,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from typing import List, Optional, Tuple
 from fastapi import UploadFile
-from models.post import Post, PostFeedback, FeedbackType
-from schemas.post import PostCreate, PostUpdate, FeedbackCreate
+from models.post import Post, PostSection, PostFeedback, FeedbackType, SectionType
+from schemas.post import PostCreate, PostUpdate, FeedbackCreate, TextSectionCreate, VideoSectionCreate, SectionTypeEnum
 from utils.image_utils import process_uploaded_image, image_to_base64, get_image_info
 
 class PostCRUD:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, post_data: PostCreate, image_file: Optional[UploadFile] = None) -> Post:
-        """Create a new post with optional image"""
+    def create(self, post_data: PostCreate) -> Post:
+        """Create a new post"""
         # Create post data
         db_post = Post(
             header=post_data.header,
@@ -20,15 +20,6 @@ class PostCRUD:
             negative_feedbacks=0,
             is_active=True
         )
-        
-        # Process image if provided
-        if image_file:
-            try:
-                # This should be called in an async context
-                # For now, we'll handle it in the API layer
-                pass
-            except Exception as e:
-                print(f"Error processing image: {e}")
         
         self.db.add(db_post)
         self.db.commit()
@@ -36,7 +27,7 @@ class PostCRUD:
         return db_post
 
     async def create_with_image(self, post_data: PostCreate, image_file: Optional[UploadFile] = None) -> Post:
-        """Create a new post with optional image (async version)"""
+        """Create a new post with optional main image"""
         # Create post data
         db_post = Post(
             header=post_data.header,
@@ -46,7 +37,7 @@ class PostCRUD:
             is_active=True
         )
         
-        # Process image if provided
+        # Process main post image if provided
         if image_file:
             try:
                 image_data, filename, content_type = await process_uploaded_image(image_file)
@@ -54,12 +45,53 @@ class PostCRUD:
                 db_post.image_filename = filename
                 db_post.image_content_type = content_type
             except Exception as e:
-                print(f"Error processing image: {e}")
+                print(f"Error processing main post image: {e}")
         
         self.db.add(db_post)
         self.db.commit()
         self.db.refresh(db_post)
         return db_post
+
+    async def update_post_image(self, post_id: int, image_file: UploadFile) -> Optional[Post]:
+        """Update main post image"""
+        db_post = self.get_by_id(post_id)
+        if not db_post:
+            return None
+
+        try:
+            image_data, filename, content_type = await process_uploaded_image(image_file)
+            db_post.image_data = image_data
+            db_post.image_filename = filename
+            db_post.image_content_type = content_type
+            
+            self.db.commit()
+            self.db.refresh(db_post)
+            return db_post
+        except Exception as e:
+            print(f"Error updating main post image: {e}")
+            return None
+
+    def remove_post_image(self, post_id: int) -> Optional[Post]:
+        """Remove main post image"""
+        db_post = self.get_by_id(post_id)
+        if not db_post:
+            return None
+
+        db_post.image_data = None
+        db_post.image_filename = None
+        db_post.image_content_type = None
+        
+        self.db.commit()
+        self.db.refresh(db_post)
+        return db_post
+
+    def get_post_image(self, post_id: int) -> Optional[Tuple[bytes, str, str]]:
+        """Get main post image data, content type, and filename"""
+        db_post = self.get_by_id(post_id)
+        if not db_post or not db_post.image_data:
+            return None
+        
+        return db_post.image_data, db_post.image_content_type, db_post.image_filename
 
     def get_by_id(self, post_id: int) -> Optional[Post]:
         """Get post by ID"""
@@ -248,8 +280,103 @@ class PostCRUD:
             
         return result
 
-    def convert_post_to_dict(self, post: Post, include_image_data: bool = False) -> dict:
-        """Convert Post object to dictionary with proper image handling"""
+    # Section CRUD methods
+    def create_text_section(self, post_id: int, section_data: TextSectionCreate) -> Optional[PostSection]:
+        """Create a text section for a post"""
+        try:
+            db_section = PostSection(
+                post_id=post_id,
+                section_type=SectionType.text,
+                order_index=section_data.order_index,
+                text_content=section_data.text_content
+            )
+            self.db.add(db_section)
+            self.db.commit()
+            self.db.refresh(db_section)
+            return db_section
+        except Exception as e:
+            self.db.rollback()
+            print(f"Error creating text section: {e}")
+            return None
+
+    async def create_image_section(self, post_id: int, order_index: int, image_file: UploadFile) -> Optional[PostSection]:
+        """Create an image section for a post"""
+        try:
+            # Process the uploaded image
+            image_data, filename, content_type = await process_uploaded_image(image_file)
+            
+            db_section = PostSection(
+                post_id=post_id,
+                section_type=SectionType.image,
+                order_index=order_index,
+                image_data=image_data,
+                image_filename=filename,
+                image_content_type=content_type
+            )
+            self.db.add(db_section)
+            self.db.commit()
+            self.db.refresh(db_section)
+            return db_section
+        except Exception as e:
+            self.db.rollback()
+            print(f"Error creating image section: {e}")
+            return None
+
+    def create_video_section(self, post_id: int, section_data: VideoSectionCreate) -> Optional[PostSection]:
+        """Create a video section for a post"""
+        try:
+            db_section = PostSection(
+                post_id=post_id,
+                section_type=SectionType.video,
+                order_index=section_data.order_index,
+                video_url=section_data.video_url
+            )
+            self.db.add(db_section)
+            self.db.commit()
+            self.db.refresh(db_section)
+            return db_section
+        except Exception as e:
+            self.db.rollback()
+            print(f"Error creating video section: {e}")
+            return None
+
+    def get_post_sections(self, post_id: int) -> List[PostSection]:
+        """Get all sections for a post, ordered by order_index"""
+        return self.db.query(PostSection).filter(
+            PostSection.post_id == post_id
+        ).order_by(PostSection.order_index).all()
+
+    def get_section_by_id(self, section_id: int) -> Optional[PostSection]:
+        """Get a specific section by ID"""
+        return self.db.query(PostSection).filter(PostSection.id == section_id).first()
+
+    def update_section_order(self, section_id: int, new_order: int) -> Optional[PostSection]:
+        """Update the order of a section"""
+        section = self.get_section_by_id(section_id)
+        if section:
+            section.order_index = new_order
+            self.db.commit()
+            self.db.refresh(section)
+        return section
+
+    def delete_section(self, section_id: int) -> bool:
+        """Delete a section"""
+        section = self.get_section_by_id(section_id)
+        if section:
+            self.db.delete(section)
+            self.db.commit()
+            return True
+        return False
+
+    def get_section_image(self, section_id: int) -> Optional[Tuple[bytes, str, str]]:
+        """Get section image data, content type, and filename"""
+        section = self.get_section_by_id(section_id)
+        if section and section.section_type == SectionType.image and section.image_data:
+            return section.image_data, section.image_content_type, section.image_filename
+        return None
+
+    def convert_post_to_dict(self, post: Post, include_sections: bool = True) -> dict:
+        """Convert Post object to dictionary with sections"""
         post_dict = {
             "id": post.id,
             "header": post.header,
@@ -263,9 +390,22 @@ class PostCRUD:
             "updated_at": post.updated_at.isoformat() if post.updated_at else None
         }
         
-        # Include base64 image data if requested
-        if include_image_data and post.image_data and post.image_content_type:
-            post_dict["image_data"] = image_to_base64(post.image_data, post.image_content_type)
-            post_dict["image_info"] = get_image_info(post.image_data)
+        if include_sections:
+            sections = []
+            for section in post.sections:
+                section_dict = {
+                    "id": section.id,
+                    "section_type": section.section_type.value,
+                    "order_index": section.order_index,
+                    "text_content": section.text_content,
+                    "image_url": f"/api/v1/posts/sections/{section.id}/image" if section.image_data else None,
+                    "image_filename": section.image_filename,
+                    "video_url": section.video_url,
+                    "video_filename": section.video_filename,
+                    "created_at": section.created_at.isoformat() if section.created_at else None,
+                    "updated_at": section.updated_at.isoformat() if section.updated_at else None
+                }
+                sections.append(section_dict)
+            post_dict["sections"] = sections
         
         return post_dict
