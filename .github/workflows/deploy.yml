@@ -3,7 +3,9 @@ name: Deploy to Server
 on:
   push:
     branches:
-      - main  # change if needed
+      - main
+      - master  # Support both common default branches
+  workflow_dispatch:  # Allow manual triggers
 
 jobs:
   deploy:
@@ -25,17 +27,24 @@ jobs:
           echo "🔑 Connecting to server..."
           sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP << 'EOF'
             set -e
-            echo "📦  Updating repo..."
-            cd clinic_backend   # change to your actual project path
-            if [ ! -d ".git" ]; then
-              echo "📥 Cloning repository for the first time..."
-              git clone https://github.com/ShehapAltahawy59/elfatih_backend.git .  # replace with your repo
+            echo "📦 Updating repo..."
+            cd elfatih_backend || {
+              echo "📥 Creating directory and cloning repository..."
+              mkdir -p elfatih_backend
+              cd elfatih_backend
+              git clone https://github.com/ShehapAltahawy59/elfatih_backend.git .
+            }
+            
+            if [ -d ".git" ]; then
+              echo "🔄 Pulling latest changes..."
+              git pull origin main || git pull origin master
             else
-              git pull origin main
+              echo "❌ Git repository not found!"
+              exit 1
             fi
 
             echo "📂 Setting up virtual environment..."
-            if [ ! -d "venv" ]; then
+            if [ ! -d "elfatih_venv" ]; then
               python3 -m venv elfatih_venv
             fi
             source elfatih_venv/bin/activate
@@ -44,10 +53,24 @@ jobs:
             pip install --upgrade pip
             pip install -r requirements.txt
 
-            # echo "📜 Running table creation script..."
-            # systemctl daemon-reload
-            # systemctl restart clinic_backend.service
-            python3 main.py
+            echo "🔧 Setting up systemd service..."
+            # Kill any existing process
+            pkill -f "python.*main.py" || true
+            
+            # Start the application in background
+            nohup python3 main.py > app.log 2>&1 &
+            
+            echo "⏳ Waiting for application to start..."
+            sleep 5
+            
+            # Check if application is running
+            if pgrep -f "python.*main.py" > /dev/null; then
+              echo "✅ Application started successfully!"
+            else
+              echo "❌ Application failed to start. Check app.log"
+              tail -20 app.log
+              exit 1
+            fi
 
             echo "✅ Deployment complete!"
           EOF
