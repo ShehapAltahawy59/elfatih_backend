@@ -16,6 +16,7 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 def get_posts(
     skip: int = 0,
     limit: int = 100,
+    include_images: bool = False,
     db: Session = Depends(get_db)
 ):
     """Get all active posts (public endpoint)"""
@@ -26,7 +27,7 @@ def get_posts(
         # Convert posts to dict to avoid serialization issues
         posts_data = []
         for post in posts:
-            posts_data.append(post_crud.convert_post_to_dict(post))
+            posts_data.append(post_crud.convert_post_to_dict(post, include_image_data=include_images))
         
         return {
             "posts": posts_data,
@@ -618,7 +619,7 @@ async def create_complete_post(
         
         return {
             "message": "Complete post created successfully",
-            "post": post_crud.convert_post_to_dict(complete_post),
+            "post": post_crud.convert_post_to_dict(complete_post, include_image_data=False),
             "sections_created": len(created_sections),
             "created_sections": created_sections
         }
@@ -655,7 +656,7 @@ def create_post(
         
         return {
             "message": "Post created successfully",
-            "post": post_crud.convert_post_to_dict(db_post),
+            "post": post_crud.convert_post_to_dict(db_post, include_image_data=False),
             "instructions": "Use the section endpoints to add content: /posts/{id}/sections/text, /posts/{id}/sections/image, /posts/{id}/sections/video"
         }
         
@@ -686,7 +687,7 @@ def update_post(
         
         return {
             "message": "Post updated successfully",
-            "post": post_crud.convert_post_to_dict(post)
+            "post": post_crud.convert_post_to_dict(post, include_image_data=False)
         }
         
     except Exception as e:
@@ -716,7 +717,7 @@ async def update_post_image(
         
         return {
             "message": "Main post image updated successfully",
-            "post": post_crud.convert_post_to_dict(post)
+            "post": post_crud.convert_post_to_dict(post, include_image_data=False)
         }
         
     except Exception as e:
@@ -745,7 +746,7 @@ def remove_post_image(
         
         return {
             "message": "Main post image removed successfully",
-            "post": post_crud.convert_post_to_dict(post)
+            "post": post_crud.convert_post_to_dict(post, include_image_data=False)
         }
         
     except Exception as e:

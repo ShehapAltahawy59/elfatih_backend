@@ -52,6 +52,7 @@ class PostSectionResponse(BaseModel):
     text_content: Optional[str] = None
     image_url: Optional[str] = None
     image_filename: Optional[str] = None
+    image_data: Optional[str] = None  # Base64 encoded section image
     video_url: Optional[str] = None
     video_filename: Optional[str] = None
     created_at: datetime
@@ -114,6 +115,9 @@ class PostResponse(BaseModel):
     id: int
     header: str
     description: Optional[str] = None
+    image_url: Optional[str] = None
+    image_filename: Optional[str] = None
+    image_data: Optional[str] = None  # Base64 encoded main post image
     sections: List[PostSectionResponse] = []
     positive_feedbacks: int
     negative_feedbacks: int

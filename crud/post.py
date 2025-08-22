@@ -375,8 +375,10 @@ class PostCRUD:
             return section.image_data, section.image_content_type, section.image_filename
         return None
 
-    def convert_post_to_dict(self, post: Post, include_sections: bool = True) -> dict:
-        """Convert Post object to dictionary with sections"""
+    def convert_post_to_dict(self, post: Post, include_sections: bool = True, include_image_data: bool = False) -> dict:
+        """Convert Post object to dictionary with sections and optional image data"""
+        import base64
+        
         post_dict = {
             "id": post.id,
             "header": post.header,
@@ -389,6 +391,17 @@ class PostCRUD:
             "created_at": post.created_at.isoformat() if post.created_at else None,
             "updated_at": post.updated_at.isoformat() if post.updated_at else None
         }
+        
+        # Include base64 encoded main post image data if requested
+        if include_image_data and post.image_data:
+            try:
+                image_b64 = base64.b64encode(post.image_data).decode('utf-8')
+                post_dict["image_data"] = f"data:{post.image_content_type or 'image/jpeg'};base64,{image_b64}"
+            except Exception as e:
+                print(f"Error encoding post image data: {e}")
+                post_dict["image_data"] = None
+        else:
+            post_dict["image_data"] = None
         
         if include_sections:
             sections = []
@@ -405,6 +418,18 @@ class PostCRUD:
                     "created_at": section.created_at.isoformat() if section.created_at else None,
                     "updated_at": section.updated_at.isoformat() if section.updated_at else None
                 }
+                
+                # Include base64 encoded section image data if requested
+                if include_image_data and section.image_data:
+                    try:
+                        section_image_b64 = base64.b64encode(section.image_data).decode('utf-8')
+                        section_dict["image_data"] = f"data:{section.image_content_type or 'image/jpeg'};base64,{section_image_b64}"
+                    except Exception as e:
+                        print(f"Error encoding section image data: {e}")
+                        section_dict["image_data"] = None
+                else:
+                    section_dict["image_data"] = None
+                
                 sections.append(section_dict)
             post_dict["sections"] = sections
         
