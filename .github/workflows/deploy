@@ -1,0 +1,53 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main  # change if needed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install SSH client
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Deploy to server and run setup
+        env:
+          SERVER_IP: 173.212.251.191
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_PASS: ${{ secrets.SERVER_PASS }}
+        run: |
+          echo "🔑 Connecting to server..."
+          sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP << 'EOF'
+            set -e
+            echo "📦  Updating repo..."
+            cd clinic_backend   # change to your actual project path
+            if [ ! -d ".git" ]; then
+              echo "📥 Cloning repository for the first time..."
+              git clone https://github.com/ShehapAltahawy59/elfatih_backend.git .  # replace with your repo
+            else
+              git pull origin main
+            fi
+
+            echo "📂 Setting up virtual environment..."
+            if [ ! -d "venv" ]; then
+              python3 -m venv elfatih_venv
+            fi
+            source elfatih_venv/bin/activate
+
+            echo "📦 Installing requirements..."
+            pip install --upgrade pip
+            pip install -r requirements.txt
+
+            # echo "📜 Running table creation script..."
+            # systemctl daemon-reload
+            # systemctl restart clinic_backend.service
+            python3 main.py
+
+            echo "✅ Deployment complete!"
+          EOF
